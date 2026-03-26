@@ -3,17 +3,13 @@ const fetch = require('node-fetch');
 const META_BASE = 'https://graph.facebook.com/v18.0';
 const HUBSPOT_BASE = 'https://api.hubapi.com';
 
-// Normalize a string for comparison — lowercase + collapse spaces
 function norm(s) {
   if (!s) return '';
   return String(s).toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
 exports.handler = async (event) => {
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Content-Type': 'application/json'
-  };
+  const headers = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
 
   const password = process.env.DASHBOARD_PASSWORD;
   if (password && event.headers['x-dashboard-password'] !== password) {
@@ -33,51 +29,51 @@ exports.handler = async (event) => {
   const until = new Date().toISOString().split('T')[0];
 
   try {
-    // ── Meta campaign insights ──
+    // ── Meta campaign insights (for spend data) ──
     const insightsUrl = `${META_BASE}/act_${accountId}/insights?fields=campaign_name,campaign_id,spend,impressions,clicks,ctr,cpc,frequency&time_range={"since":"${since}","until":"${until}"}&level=campaign&limit=100&access_token=${metaToken}`;
     const metaR = await fetch(insightsUrl);
     const metaData = await metaR.json();
     if (metaData.error) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Meta: ' + metaData.error.message }) };
 
-    // ── Meta ad-level for ID/name lookups ──
+    // ── Meta ad-level for ID lookups ──
     const adInsightsUrl = `${META_BASE}/act_${accountId}/insights?fields=campaign_name,campaign_id,adset_name,adset_id,ad_name,ad_id&time_range={"since":"${since}","until":"${until}"}&level=ad&limit=500&access_token=${metaToken}`;
     const adR = await fetch(adInsightsUrl);
     const adData = await adR.json();
 
-    // ── Build campaign lookup — normalized keys ──
-    const campaignMap = {};
-    const campaignLookup = {}; // normalized string → campaign_name key
-
+    // ── Build Meta spend lookup (normalized) ──
+    const metaSpendMap = {}; // norm(campaign_name) → spend data
     (metaData.data || []).forEach(row => {
-      const key = row.campaign_name;
-      campaignMap[key] = {
-        campaign_id: row.campaign_id, campaign_name: row.campaign_name,
-        spend: parseFloat(row.spend || 0), impressions: parseInt(row.impressions || 0),
-        clicks: parseInt(row.clicks || 0), ctr: parseFloat(row.ctr || 0),
-        cpc: parseFloat(row.cpc || 0), frequency: parseFloat(row.frequency || 0),
-        leads: 0, contacts: []
+      metaSpendMap[norm(row.campaign_name)] = {
+        campaign_id: row.campaign_id,
+        campaign_name: row.campaign_name,
+        spend: parseFloat(row.spend || 0),
+        impressions: parseInt(row.impressions || 0),
+        clicks: parseInt(row.clicks || 0),
+        ctr: parseFloat(row.ctr || 0),
+        cpc: parseFloat(row.cpc || 0),
+        frequency: parseFloat(row.frequency || 0),
       };
-      // Index by normalized campaign name AND raw campaign ID
-      campaignLookup[norm(row.campaign_name)] = key;
-      if (row.campaign_id) campaignLookup[norm(row.campaign_id)] = key;
+      if (row.campaign_id) metaSpendMap[norm(row.campaign_id)] = metaSpendMap[norm(row.campaign_name)];
     });
 
-    // Index by ad name, ad ID, adset name, adset ID
+    // Index ad IDs → campaign name
     (adData.data || []).forEach(row => {
-      const key = row.campaign_name;
-      if (!key) return;
-      if (row.ad_name)   campaignLookup[norm(row.ad_name)]   = key;
-      if (row.ad_id)     campaignLookup[norm(row.ad_id)]     = key;
-      if (row.adset_name) campaignLookup[norm(row.adset_name)] = key;
-      if (row.adset_id)   campaignLookup[norm(row.adset_id)]   = key;
+      if (!row.campaign_name) return;
+      const spendData = metaSpendMap[norm(row.campaign_name)];
+      if (spendData) {
+        if (row.ad_id) metaSpendMap[norm(row.ad_id)] = spendData;
+        if (row.ad_name) metaSpendMap[norm(row.ad_name)] = spendData;
+        if (row.adset_id) metaSpendMap[norm(row.adset_id)] = spendData;
+        if (row.adset_name) metaSpendMap[norm(row.adset_name)] = spendData;
+      }
     });
 
     // ── Pull HubSpot contacts ──
     const properties = [
       'firstname','lastname','email','createdate','lifecyclestage',
       'utm_campaign','utm_content','utm_source','utm_medium','utm_adset',
-      'hs_analytics_source','hs_analytics_source_data_1','hs_analytics_source_data_2',
-      'hs_latest_source','hs_latest_source_data_1','hs_latest_source_data_2',
+      'hs_analytics_source_data_1','hs_analytics_source_data_2',
+      'hs_latest_source_data_1','hs_latest_source_data_2',
       'country','hs_lead_status'
     ].join(',');
 
@@ -96,71 +92,86 @@ exports.handler = async (event) => {
     const sinceDate = new Date(Date.now() - days * 86400000);
     const windowContacts = allContacts.filter(c => new Date(c.properties?.createdate) >= sinceDate);
 
-    // ── Match contacts to campaigns (normalized, case-insensitive) ──
-    let unmatchedCount = 0;
-    const unmatchedSamples = [];
+    // ── Group HubSpot contacts by utm_campaign ──
+    // Key insight: group by HubSpot utm_campaign value first,
+    // THEN join Meta spend where available
+    const campaignMap = {};
 
     windowContacts.forEach(contact => {
       const props = contact.properties || {};
 
-      // All possible fields that could contain a campaign identifier
-      const candidates = [
-        props.utm_campaign,
-        props.utm_content,
-        props.utm_adset,
-        props.hs_latest_source_data_1,
-        props.hs_latest_source_data_2,
-        props.hs_analytics_source_data_1,
-        props.hs_analytics_source_data_2,
-      ].filter(Boolean);
+      // Get the primary campaign identifier from HubSpot
+      const campaignName = props.utm_campaign
+        || props.hs_latest_source_data_1
+        || props.hs_analytics_source_data_1
+        || 'Unknown / No UTM';
 
-      let matched = false;
-      for (const candidate of candidates) {
-        const key = campaignLookup[norm(candidate)];
-        if (key && campaignMap[key]) {
-          campaignMap[key].leads++;
-          campaignMap[key].contacts.push({
-            id: contact.id,
-            name: `${props.firstname || ''} ${props.lastname || ''}`.trim(),
-            email: props.email, created: props.createdate,
-            stage: props.lifecyclestage, country: props.country,
-            matched_via: candidate
-          });
-          matched = true;
-          break;
+      if (!campaignMap[campaignName]) {
+        campaignMap[campaignName] = {
+          campaign_name: campaignName,
+          campaign_id: null,
+          spend: 0, impressions: 0, clicks: 0,
+          ctr: 0, cpc: 0, frequency: 0,
+          leads: 0, contacts: [],
+          has_meta_data: false
+        };
+
+        // Try to join Meta spend data
+        const candidates = [
+          norm(campaignName),
+          norm(props.utm_content),
+          norm(props.utm_adset),
+          norm(props.hs_latest_source_data_2),
+          norm(props.hs_analytics_source_data_2),
+        ].filter(Boolean);
+
+        for (const candidate of candidates) {
+          const metaData = metaSpendMap[candidate];
+          if (metaData) {
+            campaignMap[campaignName].campaign_id = metaData.campaign_id;
+            campaignMap[campaignName].spend = metaData.spend;
+            campaignMap[campaignName].impressions = metaData.impressions;
+            campaignMap[campaignName].clicks = metaData.clicks;
+            campaignMap[campaignName].ctr = metaData.ctr;
+            campaignMap[campaignName].cpc = metaData.cpc;
+            campaignMap[campaignName].frequency = metaData.frequency;
+            campaignMap[campaignName].has_meta_data = true;
+            break;
+          }
         }
       }
 
-      if (!matched) {
-        unmatchedCount++;
-        if (unmatchedSamples.length < 5) {
-          unmatchedSamples.push({
-            email: props.email,
-            utm_campaign: props.utm_campaign,
-            utm_content: props.utm_content,
-            hs_latest_source_data_1: props.hs_latest_source_data_1,
-            hs_latest_source_data_2: props.hs_latest_source_data_2,
-          });
-        }
-      }
+      campaignMap[campaignName].leads++;
+      campaignMap[campaignName].contacts.push({
+        id: contact.id,
+        name: `${props.firstname || ''} ${props.lastname || ''}`.trim(),
+        email: props.email,
+        created: props.createdate,
+        stage: props.lifecyclestage,
+        country: props.country,
+        utm_source: props.utm_source,
+        utm_medium: props.utm_medium,
+      });
     });
 
     const campaigns = Object.values(campaignMap)
-      .map(c => ({ ...c, cpl: c.leads > 0 ? (c.spend / c.leads).toFixed(2) : null }))
-      .sort((a, b) => b.spend - a.spend);
+      .map(c => ({ ...c, cpl: c.leads > 0 && c.spend > 0 ? (c.spend / c.leads).toFixed(2) : null }))
+      .sort((a, b) => b.leads - a.leads); // sort by most leads
+
+    const totalSpend = (metaData.data || []).reduce((s, r) => s + parseFloat(r.spend || 0), 0);
 
     return {
       statusCode: 200, headers,
       body: JSON.stringify({
         period_days: days,
-        total_spend: campaigns.reduce((s, c) => s + c.spend, 0).toFixed(2),
+        total_spend: totalSpend.toFixed(2),
         total_leads: windowContacts.length,
-        matched_leads: windowContacts.length - unmatchedCount,
-        unmatched_leads: unmatchedCount,
+        matched_leads: Object.values(campaignMap).filter(c => c.has_meta_data).reduce((s, c) => s + c.leads, 0),
+        unmatched_leads: Object.values(campaignMap).filter(c => !c.has_meta_data).reduce((s, c) => s + c.leads, 0),
         attribution_rate: windowContacts.length > 0
-          ? (((windowContacts.length - unmatchedCount) / windowContacts.length) * 100).toFixed(1) : 0,
-        campaigns,
-        debug: { unmatched_samples: unmatchedSamples }
+          ? ((Object.values(campaignMap).filter(c => c.has_meta_data).reduce((s, c) => s + c.leads, 0) / windowContacts.length) * 100).toFixed(1)
+          : 0,
+        campaigns
       })
     };
   } catch (e) {
