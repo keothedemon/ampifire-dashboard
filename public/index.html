@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AmpiFire — Media Buying Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #080b0f; --bg2: #0e1318; --bg3: #141c24; --border: #1e2c3a;
+      --accent: #00d4ff; --accent2: #ff6b35; --accent3: #00ff88;
+      --warn: #ffcc00; --danger: #ff3d5a; --text: #e8f0f7; --muted: #5a7a94; --card: #0e1621;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 40px; border-bottom: 1px solid var(--border);
+      background: var(--bg2); position: sticky; top: 0; z-index: 100;
+    }
+    .logo { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 20px; color: var(--accent); }
+    .logo span { color: var(--text); }
+    .header-right { display: flex; align-items: center; gap: 10px; }
+    .period-select { background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 8px 14px; border-radius: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; cursor: pointer; }
+    .btn { padding: 9px 20px; border-radius: 6px; font-family: 'Syne', sans-serif; font-weight: 600; font-size: 13px; cursor: pointer; border: none; transition: all 0.15s; }
+    .btn-primary { background: var(--accent); color: var(--bg); }
+    .btn-primary:hover { background: #33ddff; }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* SETUP */
+    #setup-screen { display: flex; align-items: center; justify-content: center; min-height: calc(100vh - 65px); padding: 40px; }
+    .setup-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 48px; width: 100%; max-width: 480px; }
+    .setup-card h2 { font-family: 'Syne', sans-serif; font-size: 24px; font-weight: 800; margin-bottom: 8px; }
+    .setup-card p { color: var(--muted); font-size: 14px; margin-bottom: 28px; line-height: 1.6; }
+    .field { margin-bottom: 16px; }
+    .field label { display: block; font-size: 10px; font-family: 'IBM Plex Mono', monospace; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 6px; }
+    .field input { width: 100%; background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 11px 14px; border-radius: 8px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; transition: border-color 0.15s; }
+    .field input:focus { outline: none; border-color: var(--accent); }
+    .field input::placeholder { color: var(--muted); }
+    .security-note { display: flex; align-items: flex-start; gap: 10px; background: rgba(0,212,255,0.05); border: 1px solid rgba(0,212,255,0.15); border-radius: 8px; padding: 12px 14px; margin-bottom: 24px; font-size: 12px; color: var(--accent); line-height: 1.5; }
+
+    /* LOADING */
+    #loading { display: none; flex-direction: column; align-items: center; justify-content: center; min-height: calc(100vh - 65px); gap: 20px; }
+    .loader { width: 40px; height: 40px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--muted); }
+    .loading-step { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); opacity: 0; animation: fadeStep 0.5s forwards; }
+    @keyframes fadeStep { to { opacity: 1; } }
+
+    /* DASHBOARD */
+    #dashboard { display: none; padding: 32px 40px; max-width: 1400px; margin: 0 auto; }
+    .dash-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 32px; }
+    .dash-header h1 { font-family: 'Syne', sans-serif; font-size: 26px; font-weight: 800; }
+    .dash-header h1 small { color: var(--muted); font-weight: 400; font-size: 15px; margin-left: 10px; }
+    .last-run { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); }
+
+    .stat-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 28px; }
+    .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 22px 18px; position: relative; overflow: hidden; }
+    .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--accent); }
+    .stat-card.orange::before { background: var(--accent2); }
+    .stat-card.good::before { background: var(--accent3); }
+    .stat-card.warn::before { background: var(--warn); }
+    .stat-label { font-size: 10px; font-family: 'IBM Plex Mono', monospace; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 10px; }
+    .stat-value { font-family: 'Syne', sans-serif; font-size: 30px; font-weight: 800; line-height: 1; margin-bottom: 4px; }
+    .stat-sub { font-size: 11px; color: var(--muted); font-family: 'IBM Plex Mono', monospace; }
+    .accent { color: var(--accent); }
+
+    .error-banner { background: rgba(255,61,90,0.08); border: 1px solid rgba(255,61,90,0.25); border-radius: 8px; padding: 14px 18px; color: var(--danger); font-size: 13px; margin-bottom: 20px; display: none; }
+
+    .section { background: var(--card); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 24px; overflow: hidden; }
+    .section-header { padding: 18px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .section-title { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+    .badge { font-family: 'IBM Plex Mono', monospace; font-size: 10px; padding: 3px 8px; border-radius: 4px; background: rgba(0,212,255,0.1); color: var(--accent); border: 1px solid rgba(0,212,255,0.2); }
+
+    table { width: 100%; border-collapse: collapse; }
+    thead th { padding: 11px 20px; text-align: left; font-family: 'IBM Plex Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); border-bottom: 1px solid var(--border); background: rgba(0,0,0,0.2); white-space: nowrap; }
+    tbody tr { border-bottom: 1px solid rgba(30,44,58,0.5); transition: background 0.1s; }
+    tbody tr:hover { background: rgba(0,212,255,0.03); }
+    tbody tr:last-child { border-bottom: none; }
+    tbody td { padding: 13px 20px; font-size: 13px; vertical-align: middle; }
+    .mono { font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+    .muted { color: var(--muted); }
+    .cname { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+
+    .cpl-badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 20px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+    .cpl-good { background: rgba(0,255,136,0.1); color: var(--accent3); border: 1px solid rgba(0,255,136,0.2); }
+    .cpl-warn { background: rgba(255,204,0,0.1); color: var(--warn); border: 1px solid rgba(255,204,0,0.2); }
+    .cpl-bad  { background: rgba(255,61,90,0.1); color: var(--danger); border: 1px solid rgba(255,61,90,0.2); }
+    .cpl-none { background: rgba(90,122,148,0.1); color: var(--muted); border: 1px solid rgba(90,122,148,0.2); }
+
+    .tabs { display: flex; gap: 4px; padding: 16px 24px 0; border-bottom: 1px solid var(--border); }
+    .tab { padding: 8px 16px; font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.15s; }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab:hover:not(.active) { color: var(--text); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .warn-bar { display: flex; align-items: center; gap: 10px; padding: 10px 20px; background: rgba(255,204,0,0.05); border-bottom: 1px solid rgba(255,204,0,0.1); font-size: 12px; color: var(--warn); font-family: 'IBM Plex Mono', monospace; }
+    .empty-row td { text-align: center; padding: 36px; color: var(--muted); }
+
+    @media (max-width: 1100px) { .stat-grid { grid-template-columns: repeat(3,1fr); } }
+    @media (max-width: 700px) { header, #dashboard { padding: 16px 20px; } .stat-grid { grid-template-columns: 1fr 1fr; } }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Ampi<span>Fire</span> <span style="color:var(--muted);font-weight:400;font-size:12px;margin-left:6px;">Media Buyer</span></div>
+  <div class="header-right" id="header-controls" style="display:none">
+    <select class="period-select" id="period-select">
+      <option value="7">Last 7 days</option>
+      <option value="14">Last 14 days</option>
+      <option value="30" selected>Last 30 days</option>
+      <option value="60">Last 60 days</option>
+      <option value="90">Last 90 days</option>
+    </select>
+    <button class="btn btn-ghost" onclick="showSetup()">⚙ Settings</button>
+    <button class="btn btn-primary" id="run-btn" onclick="runAudit()">▶ Refresh</button>
+  </div>
+</header>
+
+<!-- SETUP -->
+<div id="setup-screen">
+  <div class="setup-card">
+    <h2>Connect Your Ad Accounts</h2>
+    <p>Enter your API credentials once. They'll be saved in your browser session so your team only needs to enter them on first visit.</p>
+    <div class="security-note">
+      🔒 Your tokens are stored only in your browser's session storage — they're sent directly to Meta and HubSpot and never stored on any server.
+    </div>
+    <div class="field">
+      <label>Meta Access Token</label>
+      <input type="password" id="meta-token" placeholder="EAAXqs..." autocomplete="off" />
+    </div>
+    <div class="field">
+      <label>Meta Ad Account ID</label>
+      <input type="text" id="meta-account" placeholder="416712422478024" value="416712422478024" />
+    </div>
+    <div class="field">
+      <label>HubSpot Private App Token</label>
+      <input type="password" id="hs-token" placeholder="pat-na1-..." autocomplete="off" />
+    </div>
+    <button class="btn btn-primary" style="width:100%;padding:14px;margin-top:8px;font-size:15px" onclick="saveAndRun()">
+      Connect & Run Audit →
+    </button>
+  </div>
+</div>
+
+<!-- LOADING -->
+<div id="loading">
+  <div class="loader"></div>
+  <div class="loading-text">Pulling data from Meta + HubSpot...</div>
+  <div id="loading-steps" style="display:flex;flex-direction:column;gap:8px;margin-top:8px;"></div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard">
+  <div class="error-banner" id="error-banner"></div>
+  <div class="dash-header">
+    <h1>Attribution Report <small id="period-label">Last 30 days</small></h1>
+    <div class="last-run" id="last-run"></div>
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-label">Total Spend</div><div class="stat-value accent" id="stat-spend">—</div><div class="stat-sub">Meta Ads</div></div>
+    <div class="stat-card"><div class="stat-label">Total Leads</div><div class="stat-value" id="stat-leads">—</div><div class="stat-sub">HubSpot contacts</div></div>
+    <div class="stat-card orange"><div class="stat-label">Avg CPL</div><div class="stat-value" id="stat-cpl">—</div><div class="stat-sub">spend ÷ leads</div></div>
+    <div class="stat-card good"><div class="stat-label">Attribution Rate</div><div class="stat-value" id="stat-attr">—</div><div class="stat-sub">UTM-matched leads</div></div>
+    <div class="stat-card warn"><div class="stat-label">Unmatched Leads</div><div class="stat-value" id="stat-unmatched">—</div><div class="stat-sub">no UTM match</div></div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <div class="section-title">Campaign Performance <span class="badge" id="campaign-count">—</span></div>
+    </div>
+    <div id="unmatched-bar" class="warn-bar" style="display:none">⚠ Some leads have no Meta campaign match — check UTM consistency.</div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Campaign</th><th>Spend</th><th>Leads</th><th>CPL</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>CPC</th><th>Frequency</th></tr></thead>
+        <tbody id="campaign-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab(this,'leads')">HubSpot Leads</div>
+      <div class="tab" onclick="switchTab(this,'ads')">Meta Ad Detail</div>
+    </div>
+    <div id="tab-leads" class="tab-content active">
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>Name</th><th>Email</th><th>Created</th><th>Stage</th><th>Country</th><th>Matched Campaign</th></tr></thead>
+          <tbody id="leads-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="tab-ads" class="tab-content">
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>Ad Name</th><th>Ad Set</th><th>Campaign</th><th>Spend</th><th>Impressions</th><th>CTR</th><th>Frequency</th></tr></thead>
+          <tbody id="ads-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const META_BASE = 'https://graph.facebook.com/v18.0';
+  const HUBSPOT_BASE = 'https://api.hubapi.com';
+
+  let creds = {
+    metaToken: sessionStorage.getItem('af_mt') || '',
+    metaAccount: sessionStorage.getItem('af_ma') || '416712422478024',
+    hsToken: sessionStorage.getItem('af_hs') || ''
+  };
+  let auditData = null;
+
+  window.onload = () => {
+    if (creds.metaToken && creds.hsToken) {
+      document.getElementById('meta-token').value = creds.metaToken;
+      document.getElementById('meta-account').value = creds.metaAccount;
+      document.getElementById('hs-token').value = creds.hsToken;
+      showDashboard();
+      runAudit();
+    }
+  };
+
+  function showSetup() {
+    document.getElementById('setup-screen').style.display = 'flex';
+    document.getElementById('dashboard').style.display = 'none';
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('header-controls').style.display = 'none';
+  }
+
+  function showDashboard() {
+    document.getElementById('setup-screen').style.display = 'none';
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+    document.getElementById('header-controls').style.display = 'flex';
+  }
+
+  function saveAndRun() {
+    const t = document.getElementById('meta-token').value.trim();
+    const a = document.getElementById('meta-account').value.trim();
+    const h = document.getElementById('hs-token').value.trim();
+    if (!t || !a || !h) { alert('Please fill in all three fields.'); return; }
+    creds = { metaToken: t, metaAccount: a, hsToken: h };
+    sessionStorage.setItem('af_mt', t);
+    sessionStorage.setItem('af_ma', a);
+    sessionStorage.setItem('af_hs', h);
+    showDashboard();
+    runAudit();
+  }
+
+  async function runAudit() {
+    const days = document.getElementById('period-select').value;
+    document.getElementById('dashboard').style.display = 'none';
+    document.getElementById('loading').style.display = 'flex';
+    document.getElementById('run-btn').disabled = true;
+    document.getElementById('error-banner').style.display = 'none';
+
+    const stepsEl = document.getElementById('loading-steps');
+    stepsEl.innerHTML = '';
+    ['→ Connecting to Meta Ads API...','→ Pulling campaign spend data...','→ Fetching HubSpot contacts...','→ Matching UTMs to campaigns...','→ Calculating CPL...'].forEach((s, i) => {
+      const el = document.createElement('div');
+      el.className = 'loading-step';
+      el.style.animationDelay = i * 0.7 + 's';
+      el.textContent = s; stepsEl.appendChild(el);
+    });
+
+    try {
+      const since = new Date(Date.now() - days * 86400000).toISOString().split('T')[0];
+      const until = new Date().toISOString().split('T')[0];
+
+      // Meta campaign insights
+      const metaUrl = `${META_BASE}/act_${creds.metaAccount}/insights?fields=campaign_name,campaign_id,spend,impressions,clicks,ctr,cpc,frequency&time_range={"since":"${since}","until":"${until}"}&level=campaign&limit=100&access_token=${creds.metaToken}`;
+
+      // Meta ad-level insights
+      const adsUrl = `${META_BASE}/act_${creds.metaAccount}/insights?fields=campaign_name,campaign_id,adset_name,adset_id,ad_name,ad_id,spend,impressions,clicks,ctr,cpc,frequency&time_range={"since":"${since}","until":"${until}"}&level=ad&limit=200&access_token=${creds.metaToken}`;
+
+      // HubSpot contacts
+      const hsProps = 'firstname,lastname,email,createdate,lifecyclestage,hs_latest_source_data_1,hs_latest_source_data_2,utm_campaign,utm_source,utm_medium,utm_content,country';
+
+      const [metaRes, adsRes] = await Promise.all([
+        fetch(metaUrl),
+        fetch(adsUrl)
+      ]);
+
+      const metaData = await metaRes.json();
+      const adsData = await adsRes.json();
+
+      if (metaData.error) throw new Error('Meta: ' + metaData.error.message);
+
+      // Pull HubSpot (paginated)
+      let allContacts = [], after = null, page = 0;
+      do {
+        const hsUrl = `${HUBSPOT_BASE}/crm/v3/objects/contacts?limit=100&properties=${hsProps}${after ? `&after=${after}` : ''}`;
+        const r = await fetch(hsUrl, { headers: { Authorization: `Bearer ${creds.hsToken}` } });
+        const data = await r.json();
+        if (data.status === 'error') throw new Error('HubSpot: ' + data.message);
+        allContacts = allContacts.concat(data.results || []);
+        after = data.paging?.next?.after || null;
+        page++;
+      } while (after && page < 10);
+
+      // Filter to window
+      const sinceDate = new Date(Date.now() - days * 86400000);
+      const windowContacts = allContacts.filter(c => new Date(c.properties?.createdate) >= sinceDate);
+
+      // Build campaign map
+      const campaignMap = {};
+      (metaData.data || []).forEach(row => {
+        campaignMap[row.campaign_name] = {
+          campaign_id: row.campaign_id, campaign_name: row.campaign_name,
+          spend: parseFloat(row.spend || 0), impressions: parseInt(row.impressions || 0),
+          clicks: parseInt(row.clicks || 0), ctr: parseFloat(row.ctr || 0),
+          cpc: parseFloat(row.cpc || 0), frequency: parseFloat(row.frequency || 0),
+          leads: 0, contacts: []
+        };
+      });
+
+      // Match contacts via UTMs
+      let unmatchedCount = 0;
+      windowContacts.forEach(contact => {
+        const p = contact.properties || {};
+        const cn = p.utm_campaign || p.hs_latest_source_data_1 || p.hs_latest_source_data_2 || null;
+        if (cn && campaignMap[cn]) {
+          campaignMap[cn].leads++;
+          campaignMap[cn].contacts.push({
+            id: contact.id, name: `${p.firstname||''} ${p.lastname||''}`.trim(),
+            email: p.email, created: p.createdate, stage: p.lifecyclestage, country: p.country
+          });
+        } else { unmatchedCount++; }
+      });
+
+      const campaigns = Object.values(campaignMap)
+        .map(c => ({ ...c, cpl: c.leads > 0 ? (c.spend / c.leads).toFixed(2) : null }))
+        .sort((a, b) => b.spend - a.spend);
+
+      const attr = {
+        period_days: days,
+        total_spend: campaigns.reduce((s, c) => s + c.spend, 0).toFixed(2),
+        total_leads: windowContacts.length,
+        unmatched_leads: unmatchedCount,
+        attribution_rate: windowContacts.length > 0
+          ? (((windowContacts.length - unmatchedCount) / windowContacts.length) * 100).toFixed(1) : 0,
+        campaigns
+      };
+
+      auditData = { attr, ads: adsData };
+      renderDashboard(attr, adsData, days);
+      showDashboard();
+    } catch (e) {
+      showDashboard();
+      const b = document.getElementById('error-banner');
+      b.textContent = '⚠ ' + e.message; b.style.display = 'block';
+    } finally {
+      document.getElementById('run-btn').disabled = false;
+      document.getElementById('last-run').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    }
+  }
+
+  function renderDashboard(attr, ads, days) {
+    const labels = {7:'Last 7 days',14:'Last 14 days',30:'Last 30 days',60:'Last 60 days',90:'Last 90 days'};
+    document.getElementById('period-label').textContent = labels[days] || `Last ${days} days`;
+
+    const spend = parseFloat(attr.total_spend || 0);
+    const leads = attr.total_leads || 0;
+    document.getElementById('stat-spend').textContent = '$' + spend.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    document.getElementById('stat-leads').textContent = leads.toLocaleString();
+    document.getElementById('stat-cpl').textContent = leads > 0 ? '$' + (spend/leads).toFixed(2) : '—';
+    document.getElementById('stat-attr').textContent = attr.attribution_rate + '%';
+    document.getElementById('stat-unmatched').textContent = attr.unmatched_leads || 0;
+    if (attr.unmatched_leads > 0) document.getElementById('unmatched-bar').style.display = 'flex';
+
+    const campaigns = attr.campaigns || [];
+    document.getElementById('campaign-count').textContent = campaigns.length + ' campaigns';
+    const tbody = document.getElementById('campaign-tbody');
+    tbody.innerHTML = '';
+    if (!campaigns.length) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="9">No campaign data for this period.</td></tr>';
+    } else {
+      campaigns.forEach(c => {
+        const cpl = c.cpl ? parseFloat(c.cpl) : null;
+        let cls = 'cpl-none', txt = 'No leads';
+        if (cpl !== null) {
+          txt = '$' + parseFloat(c.cpl).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+          cls = cpl < 75 ? 'cpl-good' : cpl < 150 ? 'cpl-warn' : 'cpl-bad';
+        }
+        const fw = parseFloat(c.frequency||0) > 3 ? 'style="color:var(--warn)"' : '';
+        tbody.innerHTML += `<tr>
+          <td><div class="cname" title="${c.campaign_name}">${c.campaign_name}</div>
+              <div class="muted mono" style="font-size:10px;margin-top:2px">${c.campaign_id}</div></td>
+          <td class="mono">$${parseFloat(c.spend).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+          <td class="mono">${c.leads}</td>
+          <td><span class="cpl-badge ${cls}">${txt}</span></td>
+          <td class="mono muted">${parseInt(c.impressions||0).toLocaleString()}</td>
+          <td class="mono muted">${parseInt(c.clicks||0).toLocaleString()}</td>
+          <td class="mono muted">${(c.ctr||0).toFixed(2)}%</td>
+          <td class="mono muted">$${(c.cpc||0).toFixed(2)}</td>
+          <td class="mono" ${fw}>${(c.frequency||0).toFixed(2)}</td>
+        </tr>`;
+      });
+    }
+
+    const adsData = ads.data || [];
+    const adsTbody = document.getElementById('ads-tbody');
+    adsTbody.innerHTML = '';
+    if (!adsData.length) {
+      adsTbody.innerHTML = '<tr class="empty-row"><td colspan="7">No ad-level data found.</td></tr>';
+    } else {
+      adsData.forEach(a => {
+        const fw = parseFloat(a.frequency||0) > 3 ? 'style="color:var(--warn)"' : '';
+        adsTbody.innerHTML += `<tr>
+          <td><div class="cname" title="${a.ad_name||'—'}">${a.ad_name||'—'}</div>
+              <div class="muted mono" style="font-size:10px;margin-top:2px">${a.ad_id||''}</div></td>
+          <td class="muted" style="font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.adset_name||'—'}</td>
+          <td class="muted" style="font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.campaign_name||'—'}</td>
+          <td class="mono">$${parseFloat(a.spend||0).toFixed(2)}</td>
+          <td class="mono muted">${parseInt(a.impressions||0).toLocaleString()}</td>
+          <td class="mono muted">${parseFloat(a.ctr||0).toFixed(2)}%</td>
+          <td class="mono" ${fw}>${parseFloat(a.frequency||0).toFixed(2)}</td>
+        </tr>`;
+      });
+    }
+
+    const allContacts = [];
+    campaigns.forEach(c => (c.contacts||[]).forEach(ct => allContacts.push({...ct, campaignName: c.campaign_name})));
+    allContacts.sort((a,b) => new Date(b.created) - new Date(a.created));
+    const lTbody = document.getElementById('leads-tbody');
+    lTbody.innerHTML = '';
+    if (!allContacts.length) {
+      lTbody.innerHTML = '<tr class="empty-row"><td colspan="6">No matched leads found. Check UTM consistency.</td></tr>';
+    } else {
+      allContacts.slice(0,300).forEach(c => {
+        const d = c.created ? new Date(c.created).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
+        const sc = c.stage==='opportunity'?'var(--accent3)':c.stage==='marketingqualifiedlead'?'var(--accent)':'var(--muted)';
+        lTbody.innerHTML += `<tr>
+          <td style="font-weight:500">${c.name||'—'}</td>
+          <td class="muted mono" style="font-size:12px">${c.email||'—'}</td>
+          <td class="muted mono" style="font-size:11px">${d}</td>
+          <td><span style="font-size:11px;text-transform:capitalize;color:${sc}">${(c.stage||'lead').replace(/_/g,' ')}</span></td>
+          <td class="muted" style="font-size:12px">${c.country||'—'}</td>
+          <td class="muted" style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.campaignName}">${c.campaignName}</td>
+        </tr>`;
+      });
+    }
+  }
+
+  function switchTab(el, tab) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('tab-' + tab).classList.add('active');
+  }
+
+  document.getElementById('period-select').addEventListener('change', () => { if (auditData) runAudit(); });
+</script>
+</body>
+</html>
