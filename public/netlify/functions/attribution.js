@@ -35,7 +35,7 @@ exports.handler = async (event) => {
     if (metaData.error) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Meta: ' + metaData.error.message }) };
 
     // ── HubSpot contacts ──
-    const properties = 'firstname,lastname,email,createdate,lifecyclestage,hs_latest_source_data_1,hs_latest_source_data_2,utm_campaign,utm_source,utm_medium,utm_content,country';
+    const properties = 'firstname,lastname,email,createdate,lifecyclestage,hs_latest_source_data_1,hs_latest_source_data_2,hs_analytics_source_data_1,hs_analytics_source_data_2,utm_campaign,utm_source,utm_medium,utm_content,utm_term,country';
     let allContacts = [], after = null, page = 0;
     do {
       const url = `${HUBSPOT_BASE}/crm/v3/objects/contacts?limit=100&properties=${properties}${after ? `&after=${after}` : ''}`;
@@ -51,32 +51,68 @@ exports.handler = async (event) => {
     const sinceDate = new Date(Date.now() - days * 86400000);
     const windowContacts = allContacts.filter(c => new Date(c.properties?.createdate) >= sinceDate);
 
-    // Build campaign map
+    // Build campaign map — index by BOTH name and ID so we can match either
     const campaignMap = {};
+    const campaignLookup = {}; // maps any identifier (name or ID) → campaign key
+
     (metaData.data || []).forEach(row => {
-      campaignMap[row.campaign_name] = {
+      const key = row.campaign_name;
+      campaignMap[key] = {
         campaign_id: row.campaign_id, campaign_name: row.campaign_name,
         spend: parseFloat(row.spend || 0), impressions: parseInt(row.impressions || 0),
         clicks: parseInt(row.clicks || 0), ctr: parseFloat(row.ctr || 0),
         cpc: parseFloat(row.cpc || 0), frequency: parseFloat(row.frequency || 0),
         leads: 0, contacts: []
       };
+      // Index by both name and ID
+      if (row.campaign_name) campaignLookup[row.campaign_name.trim()] = key;
+      if (row.campaign_id) campaignLookup[row.campaign_id.trim()] = key;
     });
 
-    // Match contacts via UTMs
+    // Also pull ad-level data so we can match by ad name / ad ID
+    const adInsightsUrl = `${META_BASE}/act_${accountId}/insights?fields=campaign_name,campaign_id,adset_name,adset_id,ad_name,ad_id&time_range={"since":"${since}","until":"${until}"}&level=ad&limit=500&access_token=${metaToken}`;
+    const adR = await fetch(adInsightsUrl);
+    const adData = await adR.json();
+    (adData.data || []).forEach(row => {
+      const key = row.campaign_name;
+      if (row.ad_name) campaignLookup[row.ad_name.trim()] = key;
+      if (row.ad_id) campaignLookup[row.ad_id.trim()] = key;
+      if (row.adset_name) campaignLookup[row.adset_name.trim()] = key;
+      if (row.adset_id) campaignLookup[row.adset_id.trim()] = key;
+    });
+
+    // Match contacts via UTMs — try all possible identifier fields
     let unmatchedCount = 0;
     windowContacts.forEach(contact => {
       const props = contact.properties || {};
-      const campaignName = props.utm_campaign || props.hs_latest_source_data_1 || props.hs_latest_source_data_2 || null;
-      if (campaignName && campaignMap[campaignName]) {
-        campaignMap[campaignName].leads++;
-        campaignMap[campaignName].contacts.push({
-          id: contact.id,
-          name: `${props.firstname || ''} ${props.lastname || ''}`.trim(),
-          email: props.email, created: props.createdate,
-          stage: props.lifecyclestage, country: props.country
-        });
-      } else { unmatchedCount++; }
+
+      // Try every possible UTM field HubSpot might store
+      const candidates = [
+        props.utm_campaign,
+        props.utm_content,
+        props.hs_latest_source_data_1,
+        props.hs_latest_source_data_2,
+        props.hs_analytics_source_data_1,
+        props.hs_analytics_source_data_2
+      ].filter(Boolean).map(v => v.trim());
+
+      let matched = false;
+      for (const candidate of candidates) {
+        const key = campaignLookup[candidate];
+        if (key && campaignMap[key]) {
+          campaignMap[key].leads++;
+          campaignMap[key].contacts.push({
+            id: contact.id,
+            name: `${props.firstname || ''} ${props.lastname || ''}`.trim(),
+            email: props.email, created: props.createdate,
+            stage: props.lifecyclestage, country: props.country,
+            matched_via: candidate
+          });
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) unmatchedCount++;
     });
 
     const campaigns = Object.values(campaignMap)
