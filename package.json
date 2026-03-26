@@ -1,0 +1,8 @@
+{
+  "name": "ampifire-media-dashboard",
+  "version": "2.0.0",
+  "description": "AmpiFire Meta Ads + HubSpot Attribution Dashboard — Netlify",
+  "dependencies": {
+    "node-fetch": "^2.7.0"
+  }
+}
