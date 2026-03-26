@@ -3,6 +3,12 @@ const fetch = require('node-fetch');
 const META_BASE = 'https://graph.facebook.com/v18.0';
 const HUBSPOT_BASE = 'https://api.hubapi.com';
 
+// Normalize a string for comparison — lowercase + collapse spaces
+function norm(s) {
+  if (!s) return '';
+  return String(s).toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
 exports.handler = async (event) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -38,9 +44,9 @@ exports.handler = async (event) => {
     const adR = await fetch(adInsightsUrl);
     const adData = await adR.json();
 
-    // ── Build campaign lookup ──
+    // ── Build campaign lookup — normalized keys ──
     const campaignMap = {};
-    const campaignLookup = {};
+    const campaignLookup = {}; // normalized string → campaign_name key
 
     (metaData.data || []).forEach(row => {
       const key = row.campaign_name;
@@ -51,26 +57,27 @@ exports.handler = async (event) => {
         cpc: parseFloat(row.cpc || 0), frequency: parseFloat(row.frequency || 0),
         leads: 0, contacts: []
       };
-      if (row.campaign_name) campaignLookup[row.campaign_name.trim()] = key;
-      if (row.campaign_id) campaignLookup[row.campaign_id.trim()] = key;
+      // Index by normalized campaign name AND raw campaign ID
+      campaignLookup[norm(row.campaign_name)] = key;
+      if (row.campaign_id) campaignLookup[norm(row.campaign_id)] = key;
     });
 
+    // Index by ad name, ad ID, adset name, adset ID
     (adData.data || []).forEach(row => {
       const key = row.campaign_name;
       if (!key) return;
-      if (row.ad_name) campaignLookup[row.ad_name.trim()] = key;
-      if (row.ad_id) campaignLookup[row.ad_id.trim()] = key;
-      if (row.adset_name) campaignLookup[row.adset_name.trim()] = key;
-      if (row.adset_id) campaignLookup[row.adset_id.trim()] = key;
+      if (row.ad_name)   campaignLookup[norm(row.ad_name)]   = key;
+      if (row.ad_id)     campaignLookup[norm(row.ad_id)]     = key;
+      if (row.adset_name) campaignLookup[norm(row.adset_name)] = key;
+      if (row.adset_id)   campaignLookup[norm(row.adset_id)]   = key;
     });
 
-    // ── Pull ALL HubSpot contacts with every possible UTM field ──
+    // ── Pull HubSpot contacts ──
     const properties = [
       'firstname','lastname','email','createdate','lifecyclestage',
-      'hs_latest_source','hs_latest_source_data_1','hs_latest_source_data_2',
+      'utm_campaign','utm_content','utm_source','utm_medium','utm_adset',
       'hs_analytics_source','hs_analytics_source_data_1','hs_analytics_source_data_2',
-      'hs_analytics_first_url','hs_analytics_last_url',
-      'utm_campaign','utm_source','utm_medium','utm_content','utm_term',
+      'hs_latest_source','hs_latest_source_data_1','hs_latest_source_data_2',
       'country','hs_lead_status'
     ].join(',');
 
@@ -89,21 +96,27 @@ exports.handler = async (event) => {
     const sinceDate = new Date(Date.now() - days * 86400000);
     const windowContacts = allContacts.filter(c => new Date(c.properties?.createdate) >= sinceDate);
 
-    // ── Match contacts to campaigns ──
+    // ── Match contacts to campaigns (normalized, case-insensitive) ──
     let unmatchedCount = 0;
     const unmatchedSamples = [];
 
     windowContacts.forEach(contact => {
       const props = contact.properties || {};
+
+      // All possible fields that could contain a campaign identifier
       const candidates = [
-        props.utm_campaign, props.utm_content,
-        props.hs_latest_source_data_1, props.hs_latest_source_data_2,
-        props.hs_analytics_source_data_1, props.hs_analytics_source_data_2,
-      ].filter(Boolean).map(v => String(v).trim());
+        props.utm_campaign,
+        props.utm_content,
+        props.utm_adset,
+        props.hs_latest_source_data_1,
+        props.hs_latest_source_data_2,
+        props.hs_analytics_source_data_1,
+        props.hs_analytics_source_data_2,
+      ].filter(Boolean);
 
       let matched = false;
       for (const candidate of candidates) {
-        const key = campaignLookup[candidate];
+        const key = campaignLookup[norm(candidate)];
         if (key && campaignMap[key]) {
           campaignMap[key].leads++;
           campaignMap[key].contacts.push({
@@ -120,16 +133,13 @@ exports.handler = async (event) => {
 
       if (!matched) {
         unmatchedCount++;
-        if (unmatchedSamples.length < 10) {
+        if (unmatchedSamples.length < 5) {
           unmatchedSamples.push({
             email: props.email,
-            createdate: props.createdate,
             utm_campaign: props.utm_campaign,
             utm_content: props.utm_content,
             hs_latest_source_data_1: props.hs_latest_source_data_1,
             hs_latest_source_data_2: props.hs_latest_source_data_2,
-            hs_analytics_source_data_1: props.hs_analytics_source_data_1,
-            hs_analytics_source_data_2: props.hs_analytics_source_data_2,
           });
         }
       }
@@ -150,13 +160,7 @@ exports.handler = async (event) => {
         attribution_rate: windowContacts.length > 0
           ? (((windowContacts.length - unmatchedCount) / windowContacts.length) * 100).toFixed(1) : 0,
         campaigns,
-        debug: {
-          total_contacts_pulled: allContacts.length,
-          window_contacts: windowContacts.length,
-          meta_campaigns: Object.keys(campaignMap),
-          sample_lookup_keys: Object.keys(campaignLookup).slice(0, 30),
-          unmatched_samples: unmatchedSamples
-        }
+        debug: { unmatched_samples: unmatchedSamples }
       })
     };
   } catch (e) {
