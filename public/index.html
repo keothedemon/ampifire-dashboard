@@ -22,7 +22,10 @@
     .logo { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 20px; color: var(--accent); }
     .logo span { color: var(--text); }
     .header-right { display: flex; align-items: center; gap: 10px; }
-    .period-select { background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 8px 14px; border-radius: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; cursor: pointer; }
+    .period-select {
+      background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+      padding: 8px 14px; border-radius: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; cursor: pointer;
+    }
     .btn { padding: 9px 20px; border-radius: 6px; font-family: 'Syne', sans-serif; font-weight: 600; font-size: 13px; cursor: pointer; border: none; transition: all 0.15s; }
     .btn-primary { background: var(--accent); color: var(--bg); }
     .btn-primary:hover { background: #33ddff; }
@@ -30,17 +33,20 @@
     .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); }
     .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
 
-    /* SETUP */
-    #setup-screen { display: flex; align-items: center; justify-content: center; min-height: calc(100vh - 65px); padding: 40px; }
-    .setup-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 48px; width: 100%; max-width: 480px; }
-    .setup-card h2 { font-family: 'Syne', sans-serif; font-size: 24px; font-weight: 800; margin-bottom: 8px; }
-    .setup-card p { color: var(--muted); font-size: 14px; margin-bottom: 28px; line-height: 1.6; }
-    .field { margin-bottom: 16px; }
-    .field label { display: block; font-size: 10px; font-family: 'IBM Plex Mono', monospace; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 6px; }
-    .field input { width: 100%; background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 11px 14px; border-radius: 8px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; transition: border-color 0.15s; }
-    .field input:focus { outline: none; border-color: var(--accent); }
-    .field input::placeholder { color: var(--muted); }
-    .security-note { display: flex; align-items: flex-start; gap: 10px; background: rgba(0,212,255,0.05); border: 1px solid rgba(0,212,255,0.15); border-radius: 8px; padding: 12px 14px; margin-bottom: 24px; font-size: 12px; color: var(--accent); line-height: 1.5; }
+    /* LOGIN */
+    #login-screen { display: flex; align-items: center; justify-content: center; min-height: calc(100vh - 65px); padding: 40px; }
+    .login-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 48px; width: 100%; max-width: 400px; text-align: center; }
+    .login-card .icon { font-size: 40px; margin-bottom: 20px; }
+    .login-card h2 { font-family: 'Syne', sans-serif; font-size: 24px; font-weight: 800; margin-bottom: 8px; }
+    .login-card p { color: var(--muted); font-size: 14px; margin-bottom: 28px; }
+    .login-field input {
+      width: 100%; background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+      padding: 13px 16px; border-radius: 8px; font-size: 15px; letter-spacing: 2px; text-align: center; margin-bottom: 16px; transition: border-color 0.15s;
+    }
+    .login-field input:focus { outline: none; border-color: var(--accent); }
+    .login-field input::placeholder { letter-spacing: 0; color: var(--muted); }
+    .login-error { color: var(--danger); font-size: 13px; margin-bottom: 14px; display: none; }
+    .login-btn { width: 100%; padding: 14px; font-size: 15px; }
 
     /* LOADING */
     #loading { display: none; flex-direction: column; align-items: center; justify-content: center; min-height: calc(100vh - 65px); gap: 20px; }
@@ -97,6 +103,7 @@
     .tab:hover:not(.active) { color: var(--text); }
     .tab-content { display: none; }
     .tab-content.active { display: block; }
+
     .warn-bar { display: flex; align-items: center; gap: 10px; padding: 10px 20px; background: rgba(255,204,0,0.05); border-bottom: 1px solid rgba(255,204,0,0.1); font-size: 12px; color: var(--warn); font-family: 'IBM Plex Mono', monospace; }
     .empty-row td { text-align: center; padding: 36px; color: var(--muted); }
 
@@ -116,34 +123,22 @@
       <option value="60">Last 60 days</option>
       <option value="90">Last 90 days</option>
     </select>
-    <button class="btn btn-ghost" onclick="showSetup()">⚙ Settings</button>
+    <button class="btn btn-ghost" onclick="logout()">Sign Out</button>
     <button class="btn btn-primary" id="run-btn" onclick="runAudit()">▶ Refresh</button>
   </div>
 </header>
 
-<!-- SETUP -->
-<div id="setup-screen">
-  <div class="setup-card">
-    <h2>Connect Your Ad Accounts</h2>
-    <p>Enter your API credentials once. They'll be saved in your browser session so your team only needs to enter them on first visit.</p>
-    <div class="security-note">
-      🔒 Your tokens are stored only in your browser's session storage — they're sent directly to Meta and HubSpot and never stored on any server.
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="icon">🔒</div>
+    <h2>Team Access</h2>
+    <p>Enter your team password to access the AmpiFire media buying dashboard.</p>
+    <div class="login-error" id="login-error">Incorrect password. Try again.</div>
+    <div class="login-field">
+      <input type="password" id="password-input" placeholder="Enter team password" onkeydown="if(event.key==='Enter')login()" />
     </div>
-    <div class="field">
-      <label>Meta Access Token</label>
-      <input type="password" id="meta-token" placeholder="EAAXqs..." autocomplete="off" />
-    </div>
-    <div class="field">
-      <label>Meta Ad Account ID</label>
-      <input type="text" id="meta-account" placeholder="416712422478024" value="416712422478024" />
-    </div>
-    <div class="field">
-      <label>HubSpot Private App Token</label>
-      <input type="password" id="hs-token" placeholder="pat-na1-..." autocomplete="off" />
-    </div>
-    <button class="btn btn-primary" style="width:100%;padding:14px;margin-top:8px;font-size:15px" onclick="saveAndRun()">
-      Connect & Run Audit →
-    </button>
+    <button class="btn btn-primary login-btn" onclick="login()">Access Dashboard →</button>
   </div>
 </div>
 
@@ -208,51 +203,56 @@
 </div>
 
 <script>
-  const META_BASE = 'https://graph.facebook.com/v18.0';
-  const HUBSPOT_BASE = 'https://api.hubapi.com';
-
-  let creds = {
-    metaToken: sessionStorage.getItem('af_mt') || '',
-    metaAccount: sessionStorage.getItem('af_ma') || '416712422478024',
-    hsToken: sessionStorage.getItem('af_hs') || ''
+  // ── Netlify Function paths ────────────────────────────────────────────────
+  const API = {
+    health:    '/.netlify/functions/health',
+    attribution: (days) => `/.netlify/functions/attribution?days=${days}`,
+    insights:  (days) => `/.netlify/functions/meta-insights?days=${days}`
   };
+
+  let teamPassword = sessionStorage.getItem('ampifire_pw') || '';
   let auditData = null;
 
-  window.onload = () => {
-    if (creds.metaToken && creds.hsToken) {
-      document.getElementById('meta-token').value = creds.metaToken;
-      document.getElementById('meta-account').value = creds.metaAccount;
-      document.getElementById('hs-token').value = creds.hsToken;
-      showDashboard();
-      runAudit();
+  window.onload = async () => {
+    const health = await fetch(API.health).then(r => r.json()).catch(() => ({}));
+    if (!health.password_protected) { showDashboard(); runAudit(); return; }
+    if (teamPassword) {
+      const ok = await testPassword(teamPassword);
+      if (ok) { showDashboard(); runAudit(); return; }
+      teamPassword = ''; sessionStorage.removeItem('ampifire_pw');
     }
+    document.getElementById('login-screen').style.display = 'flex';
   };
 
-  function showSetup() {
-    document.getElementById('setup-screen').style.display = 'flex';
+  async function testPassword(pw) {
+    const r = await fetch(API.attribution(1), { headers: { 'x-dashboard-password': pw } });
+    return r.status !== 401;
+  }
+
+  async function login() {
+    const pw = document.getElementById('password-input').value.trim();
+    if (!pw) return;
+    const ok = await testPassword(pw);
+    if (!ok) { document.getElementById('login-error').style.display = 'block'; return; }
+    teamPassword = pw;
+    sessionStorage.setItem('ampifire_pw', pw);
+    document.getElementById('login-error').style.display = 'none';
+    showDashboard(); runAudit();
+  }
+
+  function logout() {
+    sessionStorage.removeItem('ampifire_pw'); teamPassword = '';
     document.getElementById('dashboard').style.display = 'none';
-    document.getElementById('loading').style.display = 'none';
     document.getElementById('header-controls').style.display = 'none';
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('password-input').value = '';
   }
 
   function showDashboard() {
-    document.getElementById('setup-screen').style.display = 'none';
+    document.getElementById('login-screen').style.display = 'none';
     document.getElementById('loading').style.display = 'none';
     document.getElementById('dashboard').style.display = 'block';
     document.getElementById('header-controls').style.display = 'flex';
-  }
-
-  function saveAndRun() {
-    const t = document.getElementById('meta-token').value.trim();
-    const a = document.getElementById('meta-account').value.trim();
-    const h = document.getElementById('hs-token').value.trim();
-    if (!t || !a || !h) { alert('Please fill in all three fields.'); return; }
-    creds = { metaToken: t, metaAccount: a, hsToken: h };
-    sessionStorage.setItem('af_mt', t);
-    sessionStorage.setItem('af_ma', a);
-    sessionStorage.setItem('af_hs', h);
-    showDashboard();
-    runAudit();
   }
 
   async function runAudit() {
@@ -271,87 +271,18 @@
       el.textContent = s; stepsEl.appendChild(el);
     });
 
+    const h = { 'x-dashboard-password': teamPassword };
     try {
-      const since = new Date(Date.now() - days * 86400000).toISOString().split('T')[0];
-      const until = new Date().toISOString().split('T')[0];
-
-      // Meta campaign insights
-      const metaUrl = `${META_BASE}/act_${creds.metaAccount}/insights?fields=campaign_name,campaign_id,spend,impressions,clicks,ctr,cpc,frequency&time_range={"since":"${since}","until":"${until}"}&level=campaign&limit=100&access_token=${creds.metaToken}`;
-
-      // Meta ad-level insights
-      const adsUrl = `${META_BASE}/act_${creds.metaAccount}/insights?fields=campaign_name,campaign_id,adset_name,adset_id,ad_name,ad_id,spend,impressions,clicks,ctr,cpc,frequency&time_range={"since":"${since}","until":"${until}"}&level=ad&limit=200&access_token=${creds.metaToken}`;
-
-      // HubSpot contacts
-      const hsProps = 'firstname,lastname,email,createdate,lifecyclestage,hs_latest_source_data_1,hs_latest_source_data_2,utm_campaign,utm_source,utm_medium,utm_content,country';
-
-      const [metaRes, adsRes] = await Promise.all([
-        fetch(metaUrl),
-        fetch(adsUrl)
+      const [attrRes, adsRes] = await Promise.all([
+        fetch(API.attribution(days), { headers: h }),
+        fetch(API.insights(days), { headers: h })
       ]);
-
-      const metaData = await metaRes.json();
-      const adsData = await adsRes.json();
-
-      if (metaData.error) throw new Error('Meta: ' + metaData.error.message);
-
-      // Pull HubSpot (paginated)
-      let allContacts = [], after = null, page = 0;
-      do {
-        const hsUrl = `${HUBSPOT_BASE}/crm/v3/objects/contacts?limit=100&properties=${hsProps}${after ? `&after=${after}` : ''}`;
-        const r = await fetch(hsUrl, { headers: { Authorization: `Bearer ${creds.hsToken}` } });
-        const data = await r.json();
-        if (data.status === 'error') throw new Error('HubSpot: ' + data.message);
-        allContacts = allContacts.concat(data.results || []);
-        after = data.paging?.next?.after || null;
-        page++;
-      } while (after && page < 10);
-
-      // Filter to window
-      const sinceDate = new Date(Date.now() - days * 86400000);
-      const windowContacts = allContacts.filter(c => new Date(c.properties?.createdate) >= sinceDate);
-
-      // Build campaign map
-      const campaignMap = {};
-      (metaData.data || []).forEach(row => {
-        campaignMap[row.campaign_name] = {
-          campaign_id: row.campaign_id, campaign_name: row.campaign_name,
-          spend: parseFloat(row.spend || 0), impressions: parseInt(row.impressions || 0),
-          clicks: parseInt(row.clicks || 0), ctr: parseFloat(row.ctr || 0),
-          cpc: parseFloat(row.cpc || 0), frequency: parseFloat(row.frequency || 0),
-          leads: 0, contacts: []
-        };
-      });
-
-      // Match contacts via UTMs
-      let unmatchedCount = 0;
-      windowContacts.forEach(contact => {
-        const p = contact.properties || {};
-        const cn = p.utm_campaign || p.hs_latest_source_data_1 || p.hs_latest_source_data_2 || null;
-        if (cn && campaignMap[cn]) {
-          campaignMap[cn].leads++;
-          campaignMap[cn].contacts.push({
-            id: contact.id, name: `${p.firstname||''} ${p.lastname||''}`.trim(),
-            email: p.email, created: p.createdate, stage: p.lifecyclestage, country: p.country
-          });
-        } else { unmatchedCount++; }
-      });
-
-      const campaigns = Object.values(campaignMap)
-        .map(c => ({ ...c, cpl: c.leads > 0 ? (c.spend / c.leads).toFixed(2) : null }))
-        .sort((a, b) => b.spend - a.spend);
-
-      const attr = {
-        period_days: days,
-        total_spend: campaigns.reduce((s, c) => s + c.spend, 0).toFixed(2),
-        total_leads: windowContacts.length,
-        unmatched_leads: unmatchedCount,
-        attribution_rate: windowContacts.length > 0
-          ? (((windowContacts.length - unmatchedCount) / windowContacts.length) * 100).toFixed(1) : 0,
-        campaigns
-      };
-
-      auditData = { attr, ads: adsData };
-      renderDashboard(attr, adsData, days);
+      if (attrRes.status === 401) { logout(); return; }
+      const attr = await attrRes.json();
+      const ads = await adsRes.json();
+      if (attr.error) throw new Error(attr.error);
+      auditData = { attr, ads };
+      renderDashboard(attr, ads, days);
       showDashboard();
     } catch (e) {
       showDashboard();
@@ -381,7 +312,7 @@
     const tbody = document.getElementById('campaign-tbody');
     tbody.innerHTML = '';
     if (!campaigns.length) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="9">No campaign data for this period.</td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="9">No campaign data found for this period.</td></tr>';
     } else {
       campaigns.forEach(c => {
         const cpl = c.cpl ? parseFloat(c.cpl) : null;
